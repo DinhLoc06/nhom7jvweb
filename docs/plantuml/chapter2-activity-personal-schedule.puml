@@ -1,0 +1,36 @@
+@startuml
+|Người dùng|
+start
+:Chọn đối tượng: Sinh viên hoặc Giảng viên;
+:Nhập mã hoặc UUID;
+:Chọn tuần/tháng và khoảng thời gian;
+
+|Lịch học|
+:Gửi request REST theo đối tượng;
+if (Đối tượng là sinh viên?) then (Có)
+  |ScheduleService|
+  :Giải mã mã sinh viên;
+  :Lấy danh sách lớp và lịch của sinh viên;
+else (Không)
+  |ScheduleService|
+  :Giải mã mã giảng viên;
+  :Lấy lịch theo employee_id;
+endif
+
+|Cơ sở dữ liệu|
+:Truy vấn schedules, course_sections, rooms và courses;
+
+|ScheduleService|
+if (Tìm thấy hồ sơ và lịch hợp lệ?) then (Có)
+  :Chuyển entity sang ScheduleResponse;
+  |Lịch học|
+  :Hiển thị buổi học theo tuần/tháng;
+  :Cho phép xem chi tiết buổi học;
+  stop
+else (Không)
+  :Trả thông báo không có dữ liệu;
+  |Lịch học|
+  :Hiển thị trạng thái lỗi hoặc rỗng;
+  stop
+endif
+@enduml

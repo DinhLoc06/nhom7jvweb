@@ -1,0 +1,85 @@
+@startuml
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+
+actor "Quản trị / Giáo vụ" as Admin
+actor "Sinh viên" as Student
+actor "Giảng viên" as Lecturer
+
+rectangle "Hệ thống quản lý đào tạo" {
+  package "Quản lý tòa nhà" {
+    usecase "Xem danh sách tòa nhà" as UC_B1
+    usecase "Tìm kiếm / lọc tòa nhà" as UC_B2
+    usecase "Thêm tòa nhà" as UC_B3
+    usecase "Sửa tòa nhà" as UC_B4
+    usecase "Xóa tòa nhà" as UC_B5
+    usecase "Xem phòng thuộc tòa nhà" as UC_B6
+  }
+
+  package "Quản lý phòng học" {
+    usecase "Xem danh sách phòng" as UC_R1
+    usecase "Lọc phòng" as UC_R2
+    usecase "Thêm phòng" as UC_R3
+    usecase "Sửa phòng" as UC_R4
+    usecase "Xóa phòng" as UC_R5
+    usecase "Tìm phòng trống" as UC_R6
+    usecase "Xem lịch sử dụng phòng" as UC_R7
+  }
+
+  package "Quản lý lịch học" {
+    usecase "Xem lịch theo tuần" as UC_S1
+    usecase "Xem lịch theo tháng" as UC_S2
+    usecase "Tra cứu lịch sinh viên" as UC_S3
+    usecase "Tra cứu lịch giảng viên" as UC_S4
+    usecase "Thêm lịch" as UC_S5
+    usecase "Sửa lịch" as UC_S6
+    usecase "Xóa lịch" as UC_S7
+    usecase "Kiểm tra trùng phòng/lớp" as UC_S8
+  }
+
+  package "Quản lý lớp học phần" {
+    usecase "CRUD lớp học phần" as UC_C1
+    usecase "Xem sinh viên trong lớp" as UC_C2
+    usecase "Xem lớp theo sinh viên" as UC_C3
+    usecase "Xem lớp theo giảng viên" as UC_C4
+  }
+}
+
+Admin --> UC_B1
+Admin --> UC_B2
+Admin --> UC_B3
+Admin --> UC_B4
+Admin --> UC_B5
+Admin --> UC_B6
+
+Admin --> UC_R1
+Admin --> UC_R2
+Admin --> UC_R3
+Admin --> UC_R4
+Admin --> UC_R5
+Admin --> UC_R6
+Admin --> UC_R7
+
+Admin --> UC_S1
+Admin --> UC_S2
+Admin --> UC_S5
+Admin --> UC_S6
+Admin --> UC_S7
+Admin --> UC_C1
+Admin --> UC_C2
+
+Student --> UC_S3
+Student --> UC_C3
+Student --> UC_S1
+Student --> UC_S2
+
+Lecturer --> UC_S4
+Lecturer --> UC_C4
+Lecturer --> UC_S1
+Lecturer --> UC_S2
+
+UC_S5 .> UC_S8 : <<include>>
+UC_S6 .> UC_S8 : <<include>>
+UC_R6 .> UC_S8 : <<include>>
+@enduml

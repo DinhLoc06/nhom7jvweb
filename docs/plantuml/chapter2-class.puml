@@ -1,0 +1,82 @@
+@startuml
+hide circle
+skinparam classAttributeIconSize 0
+
+class Building {
+  -UUID id
+  -String code
+  -String name
+  -String address
+  -Integer totalFloors
+  -String buildingType
+  -Boolean active
+  -LocalDateTime deletedAt
+}
+
+class Room {
+  -UUID id
+  -String roomCode
+  -String roomName
+  -Integer floor
+  -Integer capacity
+  -String roomType
+  -String status
+  -boolean hasProjector
+  -boolean hasAirConditioner
+  -boolean hasComputer
+  -boolean active
+}
+
+class Course {
+  -UUID id
+  -String code
+  -String name
+}
+
+class CourseSection {
+  -UUID id
+  -String code
+  -String name
+  -UUID semesterId
+  -UUID roomId
+  -UUID buildingId
+  -Integer maxStudents
+  -Integer minStudents
+  -String classType
+  -String status
+  -Boolean active
+}
+
+class Schedule {
+  -UUID id
+  -UUID employeeId
+  -Integer dayOfWeek
+  -Integer startPeriod
+  -Integer endPeriod
+  -LocalDateTime startDate
+  -LocalDateTime endDate
+  -String mode
+  -String status
+  -String scheduleStatus
+  -Boolean active
+  -LocalDateTime deletedAt
+}
+
+class ScheduleController
+class ScheduleService
+class ScheduleRepository
+class RoomController
+class RoomService
+class RoomRepository
+
+Room "*" --> "1" Building : thuộc
+CourseSection "*" --> "1" Course : dựa trên
+Schedule "*" --> "1" CourseSection : của
+Schedule "*" --> "1" Room : tại
+
+ScheduleController --> ScheduleService
+ScheduleService --> ScheduleRepository
+ScheduleService --> RoomRepository
+RoomController --> RoomService
+RoomService --> RoomRepository
+@enduml

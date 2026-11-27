@@ -1,0 +1,36 @@
+@startuml
+actor "Người dùng" as User
+participant "calendar.js" as JS
+participant "ScheduleController" as Controller
+participant "ScheduleService" as Service
+participant "ScheduleRepository" as Repo
+participant "Microsoft SQL Server" as DB
+
+User -> JS : Chọn đối tượng và nhập mã
+JS -> Controller : GET /api/schedules/{audience}/by-code/{code}/weekly?date=...
+activate Controller
+Controller -> Service : weeklyFor{Audience}Code(code, date)
+activate Service
+
+Service -> DB : Giải mã mã sinh viên/giảng viên
+DB --> Service : UUID hồ sơ
+
+Service -> Repo : Truy vấn lịch theo UUID và khoảng tuần
+activate Repo
+Repo -> DB : Query schedules/course_sections/rooms/courses
+activate DB
+DB --> Repo : Danh sách Schedule
+deactivate DB
+Repo --> Service : Danh sách Schedule
+deactivate Repo
+
+Service -> Service : Lọc lịch theo active, deleted_at và weekday
+Service -> Service : Chuyển entity sang ScheduleResponse
+Service --> Controller : List<ScheduleResponse>
+deactivate Service
+Controller --> JS : HTTP 200 - JSON
+deactivate Controller
+
+JS -> JS : Tạo dữ liệu theo chế độ tuần/tháng
+JS --> User : Hiển thị thời khóa biểu
+@enduml

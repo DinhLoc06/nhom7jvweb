@@ -1,0 +1,105 @@
+@startuml
+hide circle
+skinparam linetype ortho
+
+entity "buildings" as buildings {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  code : VARCHAR(100)
+  name : NVARCHAR(100)
+  address : NVARCHAR(200)
+  total_floors : TINYINT
+  building_type : VARCHAR(100)
+  description : NVARCHAR(255)
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+entity "rooms" as rooms {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  * room_code : VARCHAR(20)
+  * room_name : NVARCHAR(100)
+  building_id : UNIQUEIDENTIFIER <<FK>>
+  floor : INT
+  capacity : INT
+  room_type : NVARCHAR(50)
+  status : NVARCHAR(50)
+  has_projector : BIT
+  has_air_conditioner : BIT
+  has_computer : BIT
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+entity "courses" as courses {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  code : NVARCHAR(100)
+  name : NVARCHAR(255)
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+entity "course_sections" as course_sections {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  code : NVARCHAR(100)
+  name : NVARCHAR(255)
+  course_id : UNIQUEIDENTIFIER <<FK>>
+  semester_id : UNIQUEIDENTIFIER
+  room_id : UNIQUEIDENTIFIER <<FK>>
+  building_id : UNIQUEIDENTIFIER <<FK>>
+  max_students : INT
+  min_students : INT
+  class_type : NVARCHAR(255)
+  status : NVARCHAR(50)
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+entity "schedules" as schedules {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  course_section_id : UNIQUEIDENTIFIER <<FK>>
+  room_id : UNIQUEIDENTIFIER <<FK>>
+  employee_id : UNIQUEIDENTIFIER
+  day_of_week : INT
+  start_period : INT
+  end_period : INT
+  number_of_periods : INT
+  start_date : DATETIME2
+  end_date : DATETIME2
+  mode : NVARCHAR(100)
+  status : NVARCHAR(255)
+  schedule_status : VARCHAR(50)
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+entity "student_course_sections" as student_course_sections {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  student_id : UNIQUEIDENTIFIER <<FK>>
+  course_section_id : UNIQUEIDENTIFIER <<FK>>
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+entity "lecturer_course_classes" as lecturer_course_classes {
+  * id : UNIQUEIDENTIFIER <<PK>>
+  --
+  lecturer_id : UNIQUEIDENTIFIER <<FK>>
+  course_class_id : UNIQUEIDENTIFIER <<FK>>
+  is_active : BIT
+  deleted_at : DATETIME2
+}
+
+buildings ||--o{ rooms : "building_id"
+buildings ||--o{ course_sections : "building_id"
+courses ||--o{ course_sections : "course_id"
+rooms ||--o{ course_sections : "room_id"
+course_sections ||--o{ schedules : "course_section_id"
+rooms ||--o{ schedules : "room_id"
+course_sections ||--o{ student_course_sections : "course_section_id"
+@enduml
