@@ -44,6 +44,9 @@ public class CourseSectionController {
     @GetMapping("/{id}/students")
     public List<CourseSectionStudentResponse> students(@PathVariable UUID id) { return service.students(id); }
 
+    @GetMapping("/{id}/enrollment-count")
+    public int enrollmentCount(@PathVariable UUID id) { return service.enrollmentCount(id); }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CourseSectionResponse create(@RequestBody CourseSectionRequest request) { return service.create(request); }

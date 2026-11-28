@@ -76,6 +76,16 @@ public class CourseSectionService {
                 rs.getString("email"), rs.getString("status"), rs.getString("registration_type")), sectionId);
     }
 
+    public int enrollmentCount(UUID sectionId) {
+        find(sectionId);
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from student_course_sections
+                where course_section_id = ? and deleted_at is null
+                  and coalesce(is_active, 1) = 1
+                """, Integer.class, sectionId);
+        return count == null ? 0 : count;
+    }
+
     @Transactional
     public CourseSectionResponse create(CourseSectionRequest request) {
         validate(request);

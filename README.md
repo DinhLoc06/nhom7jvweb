@@ -6,7 +6,13 @@ This project aims to develop a web platform for University Training Management S
 
 ## Database configuration
 
-Set the `DB_PASSWORD` environment variable before starting the application. Do not commit database credentials to the repository.
+The default connection targets the local SQL Server default instance at `127.0.0.1:1433` and database `it24m`. Set `DB_PASSWORD` to the password for the SQL Server login before starting the application; `DB_USERNAME` defaults to `sa`. The application requires SQL Server authentication, so a Windows-authenticated SSMS connection alone is not sufficient. You can override the endpoint and database with `DB_SERVER`, `DB_NAME`, or the complete `DB_URL`. Do not commit database credentials to the repository.
+
+## Schedule management
+
+The schedule calendar supports week/day/month views, a filtered list, print and XLSX export. The demo shift choices are Ca 1 (periods 1–5), Ca 2 (6–10), and Ca 3 (11–15). Semester filters use the semester assigned to each course section; year filters use the schedule date range.
+
+Before using one-off cancellations, make-up classes, or substitute lecturers, run `database/migrations/20261127_create_schedule_exceptions.sql` against `it24m` (or update the script's `USE` statement to match your configured database). These exceptions do not modify the recurring schedule.
 
 ## Objectives
 

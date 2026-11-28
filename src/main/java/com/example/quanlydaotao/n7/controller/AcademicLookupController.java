@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.quanlydaotao.n7.dto.response.CourseClassResponse;
+import com.example.quanlydaotao.n7.dto.response.LecturerOption;
+import com.example.quanlydaotao.n7.dto.response.SemesterOption;
 
 @RestController
 @RequestMapping("/api")
@@ -48,5 +50,29 @@ public class AcademicLookupController {
                 rs.getString("class_code"), rs.getObject("course_id", UUID.class), rs.getString("course_code"),
                 rs.getString("course_name"), rs.getObject("lecturer_id", UUID.class),
                 rs.getString("lecturer_name"), rs.getString("status")), args.toArray());
+    }
+
+    @GetMapping("/semesters")
+    public List<SemesterOption> semesters() {
+        return jdbc.query("""
+                select id, name, school_year_name
+                from semesters
+                where deleted_at is null and coalesce(is_active, 1) = 1
+                order by start_date desc, name
+                """, (rs, row) -> new SemesterOption(
+                rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("school_year_name")));
+    }
+
+    @GetMapping("/lecturer-options")
+    public List<LecturerOption> lecturers() {
+        return jdbc.query("""
+                select e.id as employee_id, e.code, e.full_name
+                from dbo.employees e
+                where e.deleted_at is null
+                  and coalesce(e.is_active, 1) = 1
+                  and e.position_id = N'GV'
+                order by e.full_name, e.code
+                """, (rs, row) -> new LecturerOption(
+                rs.getObject("employee_id", UUID.class), rs.getString("code"), rs.getString("full_name")));
     }
 }
