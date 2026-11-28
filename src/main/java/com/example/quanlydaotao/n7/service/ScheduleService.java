@@ -5,17 +5,29 @@ import java.time.LocalDateTime;
 import java.time.Month;
 import java.time.DayOfWeek;
 import java.time.temporal.TemporalAdjusters;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import javax.sql.DataSource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.example.quanlydaotao.n7.dto.request.ScheduleRequest;
@@ -32,6 +44,9 @@ import com.example.quanlydaotao.n7.repository.ScheduleRepository;
 @Service
 @Transactional(readOnly = true)
 public class ScheduleService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ScheduleService.class);
+    private static final String SCHEDULE_LOCK_RESOURCE = "it24m_schedule_conflict";
 
     private static final List<ShiftOption> SHIFTS = List.of(
             new ShiftOption(UUID.fromString("00000000-0000-0000-0000-000000000001"), "Ca 1", 1, 5),
@@ -478,35 +493,156 @@ public class ScheduleService {
                 request.endDate(),
                 request.startPeriod(),
                 request.endPeriod());
-        boolean conflictingOccurrence = java.util.stream.Stream.concat(
-                conflicts.stream(), studentConflicts.stream()).anyMatch(existing ->
-                hasWeekdayOccurrence(
-                        later(request.startDate(), existing.getStartDate()),
-                        earlier(request.endDate(), existing.getEndDate()),
-                        request.dayOfWeek()));
-        if (conflictingOccurrence) {
+        Schedule scheduleConflict = firstOverlappingOccurrence(conflicts, request);
+        if (scheduleConflict != null) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Phòng, giảng viên hoặc lớp học phần đã có lịch trùng thứ, ngày và tiết học");
+                    describeScheduleConflict(scheduleConflict, request, room, false));
+        }
+        Schedule studentConflict = firstOverlappingOccurrence(studentConflicts, request);
+        if (studentConflict != null) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    describeScheduleConflict(studentConflict, request, room, true));
         }
     }
 
+    private Schedule firstOverlappingOccurrence(List<Schedule> candidates, ScheduleRequest request) {
+        return candidates.stream()
+                .filter(existing -> overlapsOnWeekday(
+                        request.startDate(),
+                        request.endDate(),
+                        existing.getStartDate(),
+                        existing.getEndDate(),
+                        request.dayOfWeek()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String describeScheduleConflict(
+            Schedule existing,
+            ScheduleRequest request,
+            Room room,
+            boolean studentConflict) {
+        String cause;
+        if (studentConflict) {
+            cause = "Sinh viên của lớp học phần này";
+        } else if (existing.getRoom() != null
+                && Objects.equals(existing.getRoom().getId(), room.getId())) {
+            cause = "Phòng " + room.getRoomCode();
+        } else if (existing.getCourseSection() != null
+                && Objects.equals(existing.getCourseSection().getId(), request.courseSectionId())) {
+            cause = "Lớp học phần " + existing.getCourseSection().getCode();
+        } else {
+            cause = "Giảng viên";
+        }
+
+        LocalDate overlapStart = later(request.startDate(), existing.getStartDate()).toLocalDate();
+        LocalDate overlapEnd = earlier(request.endDate(), existing.getEndDate()).toLocalDate();
+        int daysUntilOccurrence = Math.floorMod(
+                request.dayOfWeek() - overlapStart.getDayOfWeek().getValue(), 7);
+        LocalDate occurrenceDate = overlapStart.plusDays(daysUntilOccurrence);
+        String sectionCode = existing.getCourseSection() == null
+                ? "không rõ lớp"
+                : existing.getCourseSection().getCode();
+        return cause + " bị trùng với lịch " + sectionCode + " vào ngày " + occurrenceDate
+                + ", tiết " + Math.max(request.startPeriod(), existing.getStartPeriod())
+                + "-" + Math.min(request.endPeriod(), existing.getEndPeriod()) + ".";
+    }
+
     void lockScheduleChanges() {
-        Integer result = jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Integer>) connection -> {
-            try (var call = connection.prepareCall("{? = call sys.sp_getapplock(?, ?, ?, ?)}")) {
-                call.registerOutParameter(1, java.sql.Types.INTEGER);
-                call.setString(2, "it24m_schedule_conflict");
-                call.setString(3, "Exclusive");
-                call.setString(4, "Transaction");
-                call.setInt(5, 10000);
-                call.execute();
-                return call.getInt(1);
+        DataSource dataSource = Objects.requireNonNull(jdbcTemplate.getDataSource());
+        Connection connection = DataSourceUtils.getConnection(dataSource);
+        boolean lockAcquired = false;
+        boolean releaseAfterTransaction = false;
+        try {
+            int result = acquireScheduleLock(connection);
+            if (result < 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "Không thể lấy khóa kiểm tra lịch học từ SQL Server (mã "
+                                + result + "). Vui lòng thử lại.");
             }
-        });
-        if (result == null || result < 0) {
+            lockAcquired = true;
+            if (!TransactionSynchronizationManager.isActualTransactionActive()
+                    || !TransactionSynchronizationManager.isSynchronizationActive()) {
+                throw new ResponseStatusException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "Không có transaction để giữ khóa kiểm tra lịch học.");
+            }
+
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public int getOrder() {
+                    return Ordered.HIGHEST_PRECEDENCE;
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    try {
+                        releaseScheduleLock(connection);
+                    } catch (SQLException exception) {
+                        LOGGER.error("Failed to release SQL Server schedule lock", exception);
+                    } finally {
+                        DataSourceUtils.releaseConnection(connection, dataSource);
+                    }
+                }
+            });
+            releaseAfterTransaction = true;
+        } catch (SQLException exception) {
             throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Không thể khóa kiểm tra lịch học; vui lòng thử lại");
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Không thể khóa kiểm tra lịch học trên SQL Server.",
+                    exception);
+        } finally {
+            if (!releaseAfterTransaction) {
+                if (lockAcquired) {
+                    try {
+                        releaseScheduleLock(connection);
+                    } catch (SQLException exception) {
+                        LOGGER.error("Failed to release SQL Server schedule lock after acquisition failure", exception);
+                    }
+                }
+                DataSourceUtils.releaseConnection(connection, dataSource);
+            }
+        }
+    }
+
+    private int acquireScheduleLock(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                DECLARE @lockResult int;
+                EXEC @lockResult = sys.sp_getapplock
+                    @Resource = ?,
+                    @LockMode = 'Exclusive',
+                    @LockOwner = 'Session',
+                    @LockTimeout = ?;
+                SELECT @lockResult;
+                """)) {
+            statement.setString(1, SCHEDULE_LOCK_RESOURCE);
+            statement.setInt(2, 10000);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new SQLException("SQL Server returned no application-lock result");
+                }
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private void releaseScheduleLock(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                DECLARE @releaseResult int;
+                EXEC @releaseResult = sys.sp_releaseapplock
+                    @Resource = ?,
+                    @LockOwner = 'Session';
+                SELECT @releaseResult;
+                """)) {
+            statement.setString(1, SCHEDULE_LOCK_RESOURCE);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next() || result.getInt(1) < 0) {
+                    throw new SQLException("SQL Server failed to release the schedule application lock");
+                }
+            }
         }
     }
 
@@ -559,6 +695,21 @@ public class ScheduleService {
     static boolean hasWeekdayOccurrence(LocalDateTime start, LocalDateTime end, int dayOfWeek) {
         int daysUntilDay = Math.floorMod(dayOfWeek - start.getDayOfWeek().getValue(), 7);
         return !start.toLocalDate().plusDays(daysUntilDay).isAfter(end.toLocalDate());
+    }
+
+    static boolean overlapsOnWeekday(
+            LocalDateTime firstStart,
+            LocalDateTime firstEnd,
+            LocalDateTime secondStart,
+            LocalDateTime secondEnd,
+            int dayOfWeek) {
+        if (firstStart == null || firstEnd == null || secondStart == null || secondEnd == null) {
+            return false;
+        }
+        LocalDateTime overlapStart = firstStart.isAfter(secondStart) ? firstStart : secondStart;
+        LocalDateTime overlapEnd = firstEnd.isBefore(secondEnd) ? firstEnd : secondEnd;
+        return !overlapStart.isAfter(overlapEnd)
+                && hasWeekdayOccurrence(overlapStart, overlapEnd, dayOfWeek);
     }
 
     static boolean shiftCovers(ShiftOption shift, Integer startPeriod, Integer endPeriod) {

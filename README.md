@@ -6,7 +6,7 @@ This project aims to develop a web platform for University Training Management S
 
 ## Database configuration
 
-Set the `DB_PASSWORD` environment variable before starting the application. Do not commit database credentials to the repository.
+The default connection targets the local SQL Server default instance at `127.0.0.1:1433` and database `it24m`. Set `DB_PASSWORD` to the password for the SQL Server login before starting the application; `DB_USERNAME` defaults to `sa`. The application requires SQL Server authentication, so a Windows-authenticated SSMS connection alone is not sufficient. You can override the endpoint and database with `DB_SERVER`, `DB_NAME`, or the complete `DB_URL`. Do not commit database credentials to the repository.
 
 ## Schedule management
 

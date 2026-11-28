@@ -66,14 +66,13 @@ public class AcademicLookupController {
     @GetMapping("/lecturer-options")
     public List<LecturerOption> lecturers() {
         return jdbc.query("""
-                select distinct e.id as employee_id, l.lecturer_code,
-                       coalesce(nullif(l.full_name, N''), e.full_name) as full_name
-                from lecturers l
-                join employees e on e.id = l.id
-                where l.deleted_at is null and coalesce(l.is_active, 1) = 1
-                  and e.deleted_at is null and coalesce(e.is_active, 1) = 1
-                order by full_name
+                select e.id as employee_id, e.code, e.full_name
+                from dbo.employees e
+                where e.deleted_at is null
+                  and coalesce(e.is_active, 1) = 1
+                  and e.position_id = N'GV'
+                order by e.full_name, e.code
                 """, (rs, row) -> new LecturerOption(
-                rs.getObject("employee_id", UUID.class), rs.getString("lecturer_code"), rs.getString("full_name")));
+                rs.getObject("employee_id", UUID.class), rs.getString("code"), rs.getString("full_name")));
     }
 }

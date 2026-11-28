@@ -576,7 +576,8 @@ async function saveSchedule(event) {
     } catch (error) {
         scheduleEditorError.textContent = error.message;
         scheduleEditorError.hidden = false;
-        if (error.message.includes('trùng') || error.message.includes('trung')) {
+        const conflictMessage = error.message.toLocaleLowerCase('vi');
+        if (conflictMessage.includes('trùng') && conflictMessage.includes('phòng')) {
             try {
                 await showRoomAlternatives(payload);
             } catch (alternativeError) {
@@ -588,9 +589,10 @@ async function saveSchedule(event) {
 
 async function showRoomAlternatives(payload) {
     const container = document.getElementById('roomAlternatives');
-    const date = firstOccurrence(payload.startDate.slice(0, 10), Number(payload.dayOfWeek));
     const params = new URLSearchParams({
-        date: toIsoDate(date),
+        startDate: payload.startDate.slice(0, 10),
+        endDate: payload.endDate.slice(0, 10),
+        dayOfWeek: String(payload.dayOfWeek),
         startPeriod: String(payload.startPeriod),
         endPeriod: String(payload.endPeriod)
     });
@@ -598,7 +600,7 @@ async function showRoomAlternatives(payload) {
     if (!countResponse.ok) throw new Error(`Không xác định được sĩ số lớp (HTTP ${countResponse.status}).`);
     const capacity = Number(await countResponse.json());
     if (capacity > 0) params.set('minCapacity', String(capacity));
-    const response = await fetch(`${API_BASE}/rooms/available?${params}`);
+    const response = await fetch(`${API_BASE}/rooms/available/recurring?${params}`);
     if (!response.ok) throw new Error(`Không tải được phòng thay thế (HTTP ${response.status}).`);
     const rooms = await response.json();
     container.hidden = false;

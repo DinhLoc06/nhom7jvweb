@@ -133,6 +133,23 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
             @Param("startPeriod") Integer startPeriod,
             @Param("endPeriod") Integer endPeriod);
 
+    @Query("""
+            select s from Schedule s
+            where s.deletedAt is null
+              and s.active = true
+              and s.dayOfWeek = :dayOfWeek
+              and s.startDate <= :endDate
+              and s.endDate >= :startDate
+              and s.startPeriod <= :endPeriod
+              and s.endPeriod >= :startPeriod
+            """)
+    List<Schedule> findOccupiedInRange(
+            @Param("dayOfWeek") Integer dayOfWeek,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("startPeriod") Integer startPeriod,
+            @Param("endPeriod") Integer endPeriod);
+
     @Query(value = """
             select distinct s.* from schedules s
             join student_course_sections scs on scs.course_section_id = s.course_section_id
