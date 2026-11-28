@@ -2,6 +2,7 @@ package com.example.quanlydaotao.n7.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Month;
 import java.time.DayOfWeek;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
@@ -20,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.example.quanlydaotao.n7.dto.request.ScheduleRequest;
 import com.example.quanlydaotao.n7.dto.response.ScheduleResponse;
 import com.example.quanlydaotao.n7.dto.response.CourseSectionResponse;
+import com.example.quanlydaotao.n7.dto.response.ShiftOption;
 import com.example.quanlydaotao.n7.entity.Course;
 import com.example.quanlydaotao.n7.entity.CourseSection;
 import com.example.quanlydaotao.n7.entity.Room;
@@ -30,6 +32,11 @@ import com.example.quanlydaotao.n7.repository.ScheduleRepository;
 @Service
 @Transactional(readOnly = true)
 public class ScheduleService {
+
+    private static final List<ShiftOption> SHIFTS = List.of(
+            new ShiftOption(UUID.fromString("00000000-0000-0000-0000-000000000001"), "Ca 1", 1, 5),
+            new ShiftOption(UUID.fromString("00000000-0000-0000-0000-000000000002"), "Ca 2", 6, 10),
+            new ShiftOption(UUID.fromString("00000000-0000-0000-0000-000000000003"), "Ca 3", 11, 15));
 
     private final ScheduleRepository scheduleRepository;
     private final RoomRepository roomRepository;
@@ -51,20 +58,41 @@ public class ScheduleService {
             String keyword,
             UUID roomId,
             UUID courseSectionId,
+            UUID semesterId,
             Integer dayOfWeek,
             LocalDate fromDate,
             LocalDate toDate,
+            Integer year,
             Boolean active,
             Pageable pageable) {
         validateDay(dayOfWeek);
+        if (year != null && (year < 1900 || year > 2100)) {
+            throw badRequest("Năm lọc phải nằm trong khoảng 1900 đến 2100");
+        }
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw badRequest("Ngày bắt đầu lọc phải trước hoặc bằng ngày kết thúc");
         }
         LocalDateTime start = fromDate == null ? null : fromDate.atStartOfDay();
         LocalDateTime end = toDate == null ? null : toDate.atTime(23, 59, 59, 999_999_900);
+        LocalDateTime yearStart = year == null ? null : LocalDate.of(year, Month.JANUARY, 1).atStartOfDay();
+        LocalDateTime yearEnd = year == null ? null
+                : LocalDate.of(year, Month.DECEMBER, 31).atTime(23, 59, 59, 999_999_900);
         return scheduleRepository.search(
-                        blankToNull(keyword), roomId, courseSectionId, dayOfWeek, start, end, active, pageable)
+                        blankToNull(keyword), roomId, courseSectionId, semesterId,
+                        dayOfWeek, start, end, yearStart, yearEnd, active, pageable)
                 .map(this::toResponse);
+    }
+
+    public List<ShiftOption> shifts() {
+        return SHIFTS;
+    }
+
+    public String shiftName(UUID shiftId) {
+        return SHIFTS.stream()
+                .filter(shift -> shift.id().equals(shiftId))
+                .map(ShiftOption::name)
+                .findFirst()
+                .orElse("");
     }
 
     public ScheduleResponse get(UUID id) {
@@ -90,8 +118,11 @@ public class ScheduleService {
                         null,
                         null,
                         null,
+                        null,
                         weekStart,
                         weekEnd,
+                        null,
+                        null,
                         true,
                         Pageable.unpaged())
                 .stream()
@@ -320,6 +351,8 @@ public class ScheduleService {
             CourseSection courseSection, Room room) {
         return !Objects.equals(existing.getCourseSection().getId(), courseSection.getId())
                 || !Objects.equals(existing.getRoom().getId(), room.getId())
+                || !Objects.equals(existing.getEmployeeId(), request.employeeId())
+                || !Objects.equals(existing.getShiftId(), request.shiftId())
                 || !Objects.equals(existing.getDayOfWeek(), request.dayOfWeek())
                 || !Objects.equals(existing.getStartPeriod(), request.startPeriod())
                 || !Objects.equals(existing.getEndPeriod(), request.endPeriod())
@@ -340,13 +373,14 @@ public class ScheduleService {
         scheduleRepository.save(schedule);
     }
 
-    private ScheduleResponse toResponse(Schedule schedule) {
+    ScheduleResponse toResponse(Schedule schedule) {
         CourseSection section = schedule.getCourseSection();
         Course course = section.getCourse();
         Room room = schedule.getRoom();
         return new ScheduleResponse(
                 schedule.getId(),
                 section.getId(),
+                section.getSemesterId(),
                 section.getCode(),
                 section.getName(),
                 course == null ? null : course.getCode(),
@@ -430,12 +464,22 @@ public class ScheduleService {
                 excludeId,
                 room.getId(),
                 request.courseSectionId(),
+                request.employeeId(),
                 request.dayOfWeek(),
                 request.startDate(),
                 request.endDate(),
                 request.startPeriod(),
                 request.endPeriod());
-        boolean conflictingOccurrence = conflicts.stream().anyMatch(existing ->
+        List<Schedule> studentConflicts = scheduleRepository.findStudentEnrollmentConflicts(
+                excludeId,
+                request.courseSectionId(),
+                request.dayOfWeek(),
+                request.startDate(),
+                request.endDate(),
+                request.startPeriod(),
+                request.endPeriod());
+        boolean conflictingOccurrence = java.util.stream.Stream.concat(
+                conflicts.stream(), studentConflicts.stream()).anyMatch(existing ->
                 hasWeekdayOccurrence(
                         later(request.startDate(), existing.getStartDate()),
                         earlier(request.endDate(), existing.getEndDate()),
@@ -443,11 +487,11 @@ public class ScheduleService {
         if (conflictingOccurrence) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Phòng hoặc lớp học phần đã có lịch trùng thứ, ngày và tiết học");
+                    "Phòng, giảng viên hoặc lớp học phần đã có lịch trùng thứ, ngày và tiết học");
         }
     }
 
-    private void lockScheduleChanges() {
+    void lockScheduleChanges() {
         Integer result = jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Integer>) connection -> {
             try (var call = connection.prepareCall("{? = call sys.sp_getapplock(?, ?, ?, ?)}")) {
                 call.registerOutParameter(1, java.sql.Types.INTEGER);
@@ -478,9 +522,9 @@ public class ScheduleService {
 
     private void validate(ScheduleRequest request) {
         if (request == null || request.courseSectionId() == null || request.roomId() == null
-                || request.dayOfWeek() == null || request.startPeriod() == null
+                || request.dayOfWeek() == null || request.shiftId() == null || request.startPeriod() == null
                 || request.endPeriod() == null || request.startDate() == null || request.endDate() == null) {
-            throw badRequest("Học phần, phòng, thứ, tiết bắt đầu/kết thúc và khoảng ngày là bắt buộc");
+            throw badRequest("Học phần, phòng, thứ, ca, tiết bắt đầu/kết thúc và khoảng ngày là bắt buộc");
         }
         validateDay(request.dayOfWeek());
         if (request.startPeriod() < 1 || request.endPeriod() < request.startPeriod()) {
@@ -489,6 +533,15 @@ public class ScheduleService {
         int periodCount = request.endPeriod() - request.startPeriod() + 1;
         if (request.numberOfPeriods() != null && request.numberOfPeriods() != periodCount) {
             throw badRequest("Số tiết phải khớp với tiết bắt đầu và tiết kết thúc");
+        }
+        if (request.shiftId() != null) {
+            ShiftOption shift = SHIFTS.stream()
+                    .filter(option -> option.id().equals(request.shiftId()))
+                    .findFirst()
+                    .orElseThrow(() -> badRequest("Ca học không hợp lệ"));
+            if (!shiftCovers(shift, request.startPeriod(), request.endPeriod())) {
+                throw badRequest("Tiết học phải nằm trong khoảng của " + shift.name());
+            }
         }
         if (request.startDate().isAfter(request.endDate())) {
             throw badRequest("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc");
@@ -506,6 +559,12 @@ public class ScheduleService {
     static boolean hasWeekdayOccurrence(LocalDateTime start, LocalDateTime end, int dayOfWeek) {
         int daysUntilDay = Math.floorMod(dayOfWeek - start.getDayOfWeek().getValue(), 7);
         return !start.toLocalDate().plusDays(daysUntilDay).isAfter(end.toLocalDate());
+    }
+
+    static boolean shiftCovers(ShiftOption shift, Integer startPeriod, Integer endPeriod) {
+        return shift != null && startPeriod != null && endPeriod != null
+                && startPeriod >= shift.startPeriod() && endPeriod <= shift.endPeriod()
+                && endPeriod >= startPeriod;
     }
 
     private void validateDay(Integer dayOfWeek) {

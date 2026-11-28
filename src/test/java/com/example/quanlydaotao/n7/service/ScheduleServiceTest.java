@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+
+import com.example.quanlydaotao.n7.dto.response.ShiftOption;
 
 class ScheduleServiceTest {
 
@@ -31,5 +34,17 @@ class ScheduleServiceTest {
                 LocalDateTime.parse("2026-10-09T08:00:00"),
                 LocalDateTime.parse("2026-10-09T17:00:00"),
                 5));
+    }
+
+    @Test
+    void acceptsPeriodsWithinSelectedShift() {
+        assertTrue(ScheduleService.shiftCovers(
+                new ShiftOption(UUID.randomUUID(), "Ca 2", 6, 10), 6, 10));
+    }
+
+    @Test
+    void rejectsPeriodsOutsideSelectedShift() {
+        assertFalse(ScheduleService.shiftCovers(
+                new ShiftOption(UUID.randomUUID(), "Ca 2", 6, 10), 5, 10));
     }
 }

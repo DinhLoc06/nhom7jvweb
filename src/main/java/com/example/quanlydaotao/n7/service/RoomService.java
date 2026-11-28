@@ -30,14 +30,17 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final ScheduleRepository scheduleRepository;
     private final BuildingRepository buildingRepository;
+    private final ScheduleService scheduleService;
 
     public RoomService(
             RoomRepository roomRepository,
             ScheduleRepository scheduleRepository,
-            BuildingRepository buildingRepository) {
+            BuildingRepository buildingRepository,
+            ScheduleService scheduleService) {
         this.roomRepository = roomRepository;
         this.scheduleRepository = scheduleRepository;
         this.buildingRepository = buildingRepository;
+        this.scheduleService = scheduleService;
     }
 
     public Page<RoomResponse> list(
@@ -70,7 +73,7 @@ public class RoomService {
         find(id);
         return scheduleRepository.findByRoom_IdAndDeletedAtIsNullOrderByStartDateAscStartPeriodAsc(id)
                 .stream()
-                .map(ScheduleService::toResponse)
+                .map(scheduleService::toResponse)
                 .toList();
     }
 

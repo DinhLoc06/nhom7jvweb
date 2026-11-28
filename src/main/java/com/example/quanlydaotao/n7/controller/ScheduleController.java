@@ -9,6 +9,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,7 +26,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.quanlydaotao.n7.dto.request.ScheduleRequest;
 import com.example.quanlydaotao.n7.dto.response.ScheduleResponse;
 import com.example.quanlydaotao.n7.dto.response.CourseSectionResponse;
+import com.example.quanlydaotao.n7.dto.response.ShiftOption;
 import com.example.quanlydaotao.n7.service.ScheduleService;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/schedules")
@@ -40,13 +50,63 @@ public class ScheduleController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID roomId,
             @RequestParam(required = false) UUID courseSectionId,
+            @RequestParam(required = false) UUID semesterId,
             @RequestParam(required = false) Integer dayOfWeek,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Integer year,
             @RequestParam(required = false) Boolean active,
             @PageableDefault(size = 20, sort = {"startDate", "startPeriod"}) Pageable pageable) {
         return scheduleService.list(
-                keyword, roomId, courseSectionId, dayOfWeek, fromDate, toDate, active, pageable);
+                keyword, roomId, courseSectionId, semesterId, dayOfWeek, fromDate, toDate, year, active, pageable);
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) UUID roomId,
+            @RequestParam(required = false) UUID courseSectionId,
+            @RequestParam(required = false) UUID semesterId,
+            @RequestParam(required = false) Integer dayOfWeek,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Integer year) throws IOException {
+        List<ScheduleResponse> schedules = scheduleService.list(keyword, roomId, courseSectionId, semesterId,
+                dayOfWeek, fromDate, toDate, year, true, Pageable.unpaged()).getContent();
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+                ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Lịch học");
+            String[] headers = { "Mã lớp", "Tên lớp", "Môn học", "Giảng viên", "Phòng", "Tòa nhà",
+                    "Thứ", "Ca", "Tiết bắt đầu", "Tiết kết thúc", "Từ ngày", "Đến ngày", "Hình thức", "Trạng thái" };
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
+            int rowNumber = 1;
+            for (ScheduleResponse item : schedules) {
+                Row row = sheet.createRow(rowNumber++);
+                String[] values = {
+                        item.courseSectionCode(), item.courseSectionName(), item.courseName(), item.lecturerName(),
+                        item.roomCode(), item.buildingName(), item.dayOfWeek() == null ? "" : item.dayOfWeek().toString(),
+                        scheduleService.shiftName(item.shiftId()), item.startPeriod() == null ? "" : item.startPeriod().toString(),
+                        item.endPeriod() == null ? "" : item.endPeriod().toString(),
+                        item.startDate() == null ? "" : item.startDate().toLocalDate().toString(),
+                        item.endDate() == null ? "" : item.endDate().toLocalDate().toString(),
+                        item.mode(), item.scheduleStatus() == null ? item.status() : item.scheduleStatus()
+                };
+                for (int i = 0; i < values.length; i++) row.createCell(i).setCellValue(values[i] == null ? "" : values[i]);
+            }
+            for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
+            workbook.write(output);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"schedules.xlsx\"")
+                    .body(output.toByteArray());
+        }
+    }
+
+    @GetMapping("/options/shifts")
+    public List<ShiftOption> shifts() {
+        return scheduleService.shifts();
     }
 
     @GetMapping("/weekly")
